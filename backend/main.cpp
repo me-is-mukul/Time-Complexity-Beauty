@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
         string text1 = readFile(argv[1]);
         string text2 = readFile(argv[2]);
 
-        PlagiarismChecker checker(3); // k = 3 word shingles
+        PlagiarismChecker checker(2); // k = 3 word shingles
         auto result = checker.check(text1, text2);
 
         cout << fixed << setprecision(2);

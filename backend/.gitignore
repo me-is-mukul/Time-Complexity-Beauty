@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Lock files (keep package-lock.json if you want reproducible installs)
+# package-lock.json
+
+# Build output
+dist/
+build/
+out/
+
+# C++ compiled binaries
+*.exe
+*.o
+*.obj
+*.out
+*.a
+*.lib
+*.dll
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Vite cache
+.vite/

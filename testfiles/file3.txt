@@ -1,0 +1,3 @@
+Machine learning is a field of artificial intelligence that allows systems to learn from data. 
+It focuses on building models that can make predictions or decisions without being explicitly programmed. 
+Popular techniques include regression, classification, and clustering.

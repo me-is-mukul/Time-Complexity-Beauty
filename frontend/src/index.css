@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+@theme {
+  --animate-fade-in-up: fadeInUp 0.4s ease-out both;
+  --animate-fade-in:    fadeIn   0.3s ease-out both;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #2a2a2a; border-radius: 2px; }
