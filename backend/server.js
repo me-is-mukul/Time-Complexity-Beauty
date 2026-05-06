@@ -112,9 +112,42 @@ app.post("/check-plagiarism-batch", upload.array("files", 50), async (req, res) 
     });
 
     const results = await withConcurrency(tasks, 4);
-    const mean = results.reduce((sum, r) => sum + r.similarity, 0) / results.length;
+    const similarities = results.map(r => r.similarity);
+    const mean = similarities.reduce((sum, s) => sum + s, 0) / similarities.length;
+    const flaggedCount = results.filter(r => r.flag).length;
 
-    res.json({ pairs: results, mean });
+    // Compute additional statistics for folder-level analysis
+    const sorted = [...similarities].sort((a, b) => a - b);
+    const median = sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)];
+    const variance = similarities.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / similarities.length;
+    const stdDev = Math.sqrt(variance);
+    const minSimilarity = Math.min(...similarities);
+    const maxSimilarity = Math.max(...similarities);
+    const criticalCount = results.filter(r => r.similarity > 75).length;
+    const highCount = results.filter(r => r.similarity > 50 && r.similarity <= 75).length;
+
+    // Determine risk level based on mean similarity
+    let riskLevel = "low";
+    if (mean > 75) riskLevel = "critical";
+    else if (mean > 50) riskLevel = "high";
+    else if (mean > 25) riskLevel = "moderate";
+
+    res.json({
+      mean,
+      median,
+      stdDev,
+      minSimilarity,
+      maxSimilarity,
+      flaggedCount,
+      totalPairs: results.length,
+      criticalCount,
+      highCount,
+      riskLevel,
+      // Detailed pairs kept for backend records but not sent to frontend
+      pairs: results
+    });
   } catch (err) {
     res.status(500).json({ error: "Binary execution failed", detail: err.message });
   } finally {

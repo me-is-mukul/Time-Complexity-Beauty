@@ -27,6 +27,32 @@ function useStepLoader(active) {
 // ── Multi-folder picker ──────────────────────────────────────────────────────
 
 function MultiFolderInput({ folders, onChange, onError }) {
+  // Natural sort function that handles numeric ordering correctly
+  const naturalSort = (a, b) => {
+    const reA = /[^0-9]+|\d+/g;
+    const reN = /^\D/;
+    
+    const aA = a.name.match(reA) || [];
+    const bA = b.name.match(reA) || [];
+    
+    for (let i = 0; i < Math.min(aA.length, bA.length); i++) {
+      const aa = aA[i];
+      const bb = bA[i];
+      
+      // If both are numbers, compare numerically
+      if (!reN.test(aa) && !reN.test(bb)) {
+        const aNum = parseInt(aa, 10);
+        const bNum = parseInt(bb, 10);
+        if (aNum !== bNum) return aNum - bNum;
+      } else {
+        // Otherwise, compare as strings
+        if (aa !== bb) return aa.localeCompare(bb);
+      }
+    }
+    
+    return aA.length - bA.length;
+  };
+
   async function pick() {
     if (!window.showDirectoryPicker) {
       onError("showDirectoryPicker not supported — use Chrome or Edge.");
@@ -46,7 +72,7 @@ function MultiFolderInput({ folders, onChange, onError }) {
           found.push({ name: entry.name, files });
         }
       }
-      found.sort((a, b) => a.name.localeCompare(b.name));
+      found.sort(naturalSort);
       if (found.length === 0) {
         onError("No sub-folders found inside the selected folder.");
       } else {
@@ -292,194 +318,71 @@ function LoaderView({ totalFolders, currentFolderIdx, currentFolderName, current
   );
 }
 
-// ── Result Card ──────────────────────────────────────────────────────────────
+// ── Folder Result Card ──────────────────────────────────────────────────────
 
-function ResultCard({ pair, index }) {
+function FolderResultCard({ folderName, result, index }) {
+  const getRiskColor = () => {
+    switch (result.riskLevel) {
+      case "critical": return { bg: "bg-red-500/10", border: "border-red-500/30", text: "text-red-400", label: "🔴 Critical Risk" };
+      case "high": return { bg: "bg-orange-500/10", border: "border-orange-500/30", text: "text-orange-400", label: "🟠 High Risk" };
+      case "moderate": return { bg: "bg-yellow-500/10", border: "border-yellow-500/30", text: "text-yellow-400", label: "🟡 Moderate Risk" };
+      case "low": return { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400", label: "🟢 Low Risk" };
+      default: return { bg: "bg-zinc-500/10", border: "border-zinc-500/30", text: "text-zinc-400", label: "Unknown" };
+    }
+  };
+
+  const risk = getRiskColor();
+  const criticalFlagged = result.flaggedCount > 0;
+
   return (
     <div
-      className="animate-fade-in-up group bg-zinc-950 border border-zinc-700/70 rounded-sm px-4 py-3.5 hover:border-zinc-500 hover:bg-zinc-900 transition-all duration-200"
-      style={{ animationDelay: `${index * 55}ms` }}
+      className={`animate-fade-in-up border rounded-sm px-5 py-4 transition-all duration-200 ${risk.bg} ${risk.border}`}
+      style={{ animationDelay: `${index * 80}ms` }}
     >
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-zinc-300 truncate font-mono">{pair.file1}</p>
-          <div className="flex items-center gap-2 my-1.5">
-            <span className="flex-1 border-t border-zinc-800" />
-            <span className="text-[9px] text-zinc-700 tracking-widest uppercase shrink-0">vs</span>
-            <span className="flex-1 border-t border-zinc-800" />
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-zinc-100 truncate mb-2">{folderName}</p>
+          
+          {/* Key metrics row */}
+          <div className="flex flex-wrap gap-3 mb-3 text-xs">
+            <span className="text-zinc-400">
+              <span className="font-mono font-semibold text-zinc-300">{result.totalPairs}</span> files compared
+            </span>
+            <span className="text-zinc-400">
+              <span className="font-mono font-semibold text-zinc-300">{result.mean.toFixed(1)}%</span> avg similarity
+            </span>
           </div>
-          <p className="text-xs text-zinc-300 truncate font-mono">{pair.file2}</p>
+
+          {/* Secondary metrics */}
+          <div className="flex flex-wrap gap-3 text-[11px] text-zinc-500">
+            <span>Min: <span className="text-zinc-300">{result.minSimilarity.toFixed(1)}%</span></span>
+            <span>Max: <span className="text-zinc-300">{result.maxSimilarity.toFixed(1)}%</span></span>
+            <span>σ: <span className="text-zinc-300">±{result.stdDev.toFixed(1)}%</span></span>
+          </div>
         </div>
-        <div className="flex flex-col items-end shrink-0 pl-2">
-          <span className="text-xl font-bold text-zinc-100 leading-none tabular-nums">
-            {pair.similarity.toFixed(1)}%
+
+        {/* Right: Risk indicator */}
+        <div className="flex flex-col items-end shrink-0 pl-4">
+          <span className={`text-xs font-bold tracking-wide uppercase mb-2 ${risk.text}`}>
+            {risk.label}
           </span>
-          <span className={`text-[10px] font-semibold mt-1.5 tracking-widest uppercase ${
-            pair.flag ? "text-red-400" : "text-emerald-500"
-          }`}>
-            {pair.flag ? "flagged" : "clean"}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Results Summary Report ───────────────────────────────────────────────────
-
-function ResultsSummaryReport({ results }) {
-  const pairs = results.pairs;
-  const mean = results.mean;
-  const flaggedCount = pairs.filter(p => p.flag).length;
-  
-  // Calculate statistics
-  const similarities = pairs.map(p => p.similarity);
-  const sortedSimilarities = [...similarities].sort((a, b) => a - b);
-  const median = sortedSimilarities.length % 2 === 0
-    ? (sortedSimilarities[sortedSimilarities.length / 2 - 1] + sortedSimilarities[sortedSimilarities.length / 2]) / 2
-    : sortedSimilarities[Math.floor(sortedSimilarities.length / 2)];
-  
-  const minSimilarity = Math.min(...similarities);
-  const maxSimilarity = Math.max(...similarities);
-  const variance = similarities.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / similarities.length;
-  const stdDev = Math.sqrt(variance);
-  
-  // Categorize results
-  const critical = pairs.filter(p => p.similarity > 75);
-  const high = pairs.filter(p => p.similarity > 50 && p.similarity <= 75);
-  const moderate = pairs.filter(p => p.similarity > 25 && p.similarity <= 50);
-  const low = pairs.filter(p => p.similarity <= 25);
-  
-  // Color mapping
-  const severityColor = (similarity) => {
-    if (similarity > 75) return "text-red-400";
-    if (similarity > 50) return "text-orange-400";
-    if (similarity > 25) return "text-yellow-400";
-    return "text-emerald-400";
-  };
-  
-  const severityBg = (similarity) => {
-    if (similarity > 75) return "bg-red-500/10 border-red-500/30";
-    if (similarity > 50) return "bg-orange-500/10 border-orange-500/30";
-    if (similarity > 25) return "bg-yellow-500/10 border-yellow-500/30";
-    return "bg-emerald-500/10 border-emerald-500/30";
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Key Metrics */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-sm px-4 py-3">
-          <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Mean</p>
-          <p className={`text-2xl font-bold tabular-nums ${mean > 50 ? "text-red-400" : "text-emerald-400"}`}>
-            {mean.toFixed(2)}%
-          </p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-sm px-4 py-3">
-          <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Median</p>
-          <p className="text-2xl font-bold text-zinc-300 tabular-nums">
-            {median.toFixed(2)}%
-          </p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-sm px-4 py-3">
-          <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Std Dev</p>
-          <p className="text-2xl font-bold text-zinc-300 tabular-nums">
-            ±{stdDev.toFixed(2)}%
-          </p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-sm px-4 py-3">
-          <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Flagged</p>
-          <p className={`text-2xl font-bold tabular-nums ${flaggedCount > 0 ? "text-red-400" : "text-emerald-400"}`}>
-            {flaggedCount}/{pairs.length}
-          </p>
-        </div>
-      </div>
-
-      {/* Range Overview */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-sm px-4 py-3">
-        <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-3">Range</p>
-        <div className="flex items-center justify-between text-sm font-mono">
-          <span className="text-emerald-400">{minSimilarity.toFixed(2)}%</span>
-          <span className="text-zinc-600">—</span>
-          <span className="text-red-400">{maxSimilarity.toFixed(2)}%</span>
-        </div>
-      </div>
-
-      {/* Severity Distribution */}
-      <div className="space-y-2">
-        <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em]">Severity Distribution</p>
-        
-        <div className={`border rounded-sm px-3 py-2 ${severityBg(75)}`}>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-300">
-              <span className="text-red-400 font-bold">◆ Critical</span> (&gt;75%)
-            </span>
-            <span className="font-bold text-red-400">{critical.length}</span>
-          </div>
-        </div>
-
-        <div className={`border rounded-sm px-3 py-2 ${severityBg(60)}`}>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-300">
-              <span className="text-orange-400 font-bold">◆ High</span> (50-75%)
-            </span>
-            <span className="font-bold text-orange-400">{high.length}</span>
-          </div>
-        </div>
-
-        <div className={`border rounded-sm px-3 py-2 ${severityBg(35)}`}>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-300">
-              <span className="text-yellow-400 font-bold">◆ Moderate</span> (25-50%)
-            </span>
-            <span className="font-bold text-yellow-400">{moderate.length}</span>
-          </div>
-        </div>
-
-        <div className={`border rounded-sm px-3 py-2 ${severityBg(10)}`}>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-300">
-              <span className="text-emerald-400 font-bold">◆ Low</span> (0-25%)
-            </span>
-            <span className="font-bold text-emerald-400">{low.length}</span>
+          <div className="text-center">
+            <p className="text-[10px] text-zinc-500 mb-1">Flagged</p>
+            <p className={`text-lg font-bold tabular-nums ${criticalFlagged ? "text-red-400" : "text-emerald-400"}`}>
+              {result.flaggedCount}/{result.totalPairs}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Key Insights */}
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-sm px-4 py-3">
-        <p className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-3">Key Insights</p>
-        <ul className="space-y-2 text-xs text-zinc-400">
-          <li className="flex gap-2">
-            <span className="text-zinc-600">→</span>
-            <span>
-              {flaggedCount > 0 
-                ? `${flaggedCount} potential plagiarism case${flaggedCount !== 1 ? "s" : ""} detected`
-                : "No flagged plagiarism cases detected"}
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="text-zinc-600">→</span>
-            <span>
-              {critical.length > 0
-                ? `${critical.length} critical match${critical.length !== 1 ? "es" : ""} with >75% similarity`
-                : "No critical matches (>75%) found"}
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="text-zinc-600">→</span>
-            <span>
-              Overall confidence: {mean > 75 ? "High plagiarism risk" : mean > 50 ? "Moderate concern" : mean > 25 ? "Low concern" : "Minimal risk"}
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="text-zinc-600">→</span>
-            <span>
-              Consistency: {stdDev > 20 ? "Highly variable results across pairs" : "Relatively consistent results"}
-            </span>
-          </li>
-        </ul>
-      </div>
+      {/* Alert banner if flagged */}
+      {criticalFlagged && (
+        <div className="mt-3 pt-3 border-t border-current border-opacity-20">
+          <p className="text-[10px] text-zinc-300">
+            ⚠️ <span className="font-semibold">{result.criticalCount}</span> critical match{result.criticalCount !== 1 ? "es" : ""} detected (&gt;75%)
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -487,23 +390,23 @@ function ResultsSummaryReport({ results }) {
 // ── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [folders,          setFolders]          = useState([]);
-  const [running,          setRunning]          = useState(false);
-  const [results,          setResults]          = useState(null);
-  const [error,            setError]            = useState(null);
-  const [graphData,        setGraphData]        = useState([]);
-  const [currentFolderIdx, setCurrentFolderIdx] = useState(-1);
-  const [doneFolders,      setDoneFolders]      = useState(new Set());
+  const [folders,           setFolders]           = useState([]);
+  const [running,           setRunning]           = useState(false);
+  const [folderResults,     setFolderResults]     = useState([]);
+  const [error,             setError]             = useState(null);
+  const [graphData,         setGraphData]         = useState([]);
+  const [currentFolderIdx,  setCurrentFolderIdx]  = useState(-1);
+  const [doneFolders,       setDoneFolders]       = useState(new Set());
 
   const currentStep = useStepLoader(running);
-  const showSplit   = running || results !== null || graphData.length > 0;
+  const showSplit   = running || folderResults.length > 0 || graphData.length > 0;
   const currentFolderName = currentFolderIdx >= 0 && folders[currentFolderIdx]
     ? folders[currentFolderIdx].name
     : "";
 
   function handleFolderChange(newFolders) {
     setFolders(newFolders);
-    setResults(null);
+    setFolderResults([]);
     setGraphData([]);
     setError(null);
     setDoneFolders(new Set());
@@ -513,7 +416,7 @@ export default function App() {
   async function handleSubmit() {
     if (folders.length === 0) return;
     setError(null);
-    setResults(null);
+    setFolderResults([]);
     setGraphData([]);
     setDoneFolders(new Set());
     setRunning(true);
@@ -537,7 +440,15 @@ export default function App() {
         if (!res.ok) throw new Error(data.error || "Server error");
         const timeMs = Math.round(performance.now() - t0);
 
-        setResults(data);
+        // Store folder result
+        setFolderResults((prev) => [
+          ...prev,
+          { 
+            folderName: folder.name,
+            ...data
+          }
+        ]);
+
         setGraphData((prev) => [
           ...prev,
           { fileCount: folder.files.length, timeMs, folderName: folder.name },
@@ -553,99 +464,98 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-screen overflow-hidden bg-[#0a0a0a]">
 
-      {/* ── Left: Form + Graph ── */}
-      <div className={`shrink-0 transition-all duration-700 ease-in-out ${
-        showSplit ? "w-1/2 overflow-y-auto" : "w-full flex items-center justify-center"
+      {/* ── Left: Scrollable Form + Graph ── */}
+      <div className={`shrink-0 transition-all duration-700 ease-in-out flex flex-col overflow-y-auto h-screen ${
+        showSplit ? "w-1/2" : "w-full"
       }`}>
-        <div className={`w-full px-8 py-12 ${showSplit ? "max-w-md mx-auto" : "max-w-sm"}`}>
-
-          {/* Header */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="w-4 border-t border-red-800" />
-              <p className="text-[9px] text-red-800/80 uppercase tracking-[0.35em]">Forensic Analysis</p>
-            </div>
-            <h1 className="text-3xl font-bold text-zinc-100 tracking-tight leading-tight">
-              Plagiarism<br />
-              <span className="text-zinc-500">Checker</span>
-            </h1>
-          </div>
-
-          {/* Form or Loader */}
-          {running ? (
-            <LoaderView
-              totalFolders={folders.length}
-              currentFolderIdx={currentFolderIdx}
-              currentFolderName={currentFolderName}
-              currentStep={currentStep}
-            />
-          ) : (
-            <div className="flex flex-col gap-3 animate-fade-in">
-              <MultiFolderInput folders={folders} onChange={handleFolderChange} onError={setError} />
-
-              <FolderList
-                folders={folders}
-                activeIdx={currentFolderIdx}
-                doneSet={doneFolders}
-              />
-
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={folders.length === 0}
-                className="w-full bg-zinc-800 border border-zinc-600 rounded-sm px-4 py-3 text-xs font-semibold text-zinc-200 tracking-widest uppercase hover:bg-zinc-700 hover:border-zinc-400 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed transition-all duration-200"
-              >
-                {folders.length > 0
-                  ? `Benchmark ${folders.length} folder${folders.length !== 1 ? "s" : ""}`
-                  : "Select a folder"}
-              </button>
-
-              {error && (
-                <div className="border border-red-900 bg-red-950/40 rounded-sm px-3 py-2.5">
-                  <p className="text-xs text-red-400 tracking-wide">{error}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Graph — grows as folders complete */}
+        {/* Graph at top — scrolls with content */}
+        <div className="px-8 py-8">
           <TimeGraph data={graphData} />
+        </div>
 
+        {/* Form/Loader below — scrollable */}
+        <div className={`flex items-center justify-center ${showSplit ? "" : ""} px-8 py-12`}>
+          <div className={`w-full ${showSplit ? "max-w-md" : "max-w-sm"}`}>
+
+            {/* Header */}
+            <div className="mb-10">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-4 border-t border-red-800" />
+                <p className="text-[9px] text-red-800/80 uppercase tracking-[0.35em]">Forensic Analysis</p>
+              </div>
+              <h1 className="text-3xl font-bold text-zinc-100 tracking-tight leading-tight">
+                Plagiarism<br />
+                <span className="text-zinc-500">Checker</span>
+              </h1>
+            </div>
+
+            {/* Form or Loader */}
+            {running ? (
+              <LoaderView
+                totalFolders={folders.length}
+                currentFolderIdx={currentFolderIdx}
+                currentFolderName={currentFolderName}
+                currentStep={currentStep}
+              />
+            ) : (
+              <div className="flex flex-col gap-3 animate-fade-in">
+                <MultiFolderInput folders={folders} onChange={handleFolderChange} onError={setError} />
+
+                <FolderList
+                  folders={folders}
+                  activeIdx={currentFolderIdx}
+                  doneSet={doneFolders}
+                />
+
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={folders.length === 0}
+                  className="w-full bg-zinc-800 border border-zinc-600 rounded-sm px-4 py-3 text-xs font-semibold text-zinc-200 tracking-widest uppercase hover:bg-zinc-700 hover:border-zinc-400 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed transition-all duration-200"
+                >
+                  {folders.length > 0
+                    ? `Benchmark ${folders.length} folder${folders.length !== 1 ? "s" : ""}`
+                    : "Select a folder"}
+                </button>
+
+                {error && (
+                  <div className="border border-red-900 bg-red-950/40 rounded-sm px-3 py-2.5">
+                    <p className="text-xs text-red-400 tracking-wide">{error}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Right: Latest batch results ── */}
-      <div className={`shrink-0 transition-all duration-700 ease-in-out overflow-hidden border-l border-zinc-800 bg-[#0d0d0d] ${
-        showSplit ? "w-1/2" : "w-0"
+      {/* ── Right: Scrollable Folder Analysis Results ── */}
+      <div className={`shrink-0 transition-all duration-700 ease-in-out border-l border-zinc-800 bg-[#0d0d0d] h-screen ${
+        showSplit ? "w-1/2 overflow-y-auto" : "w-0 overflow-hidden"
       }`}>
-        {results && (
-          <div className="h-full overflow-y-auto px-8 py-12 animate-fade-in">
+        {folderResults.length > 0 && (
+          <div className="animate-fade-in px-8 py-12">
 
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-4 border-t border-red-800" />
-                <p className="text-[9px] text-red-800/80 uppercase tracking-[0.35em]">Analysis Report</p>
+                <p className="text-[9px] text-red-800/80 uppercase tracking-[0.35em]">Folder Analysis</p>
               </div>
-              <h2 className="text-2xl font-bold text-zinc-100">Plagiarism Report</h2>
-              <p className="text-xs text-zinc-600 mt-2">{results.pairs.length} file pair{results.pairs.length !== 1 ? "s" : ""} analysed</p>
+              <h2 className="text-2xl font-bold text-zinc-100">Results Summary</h2>
+              <p className="text-xs text-zinc-600 mt-2">{folderResults.length} folder{folderResults.length !== 1 ? "s" : ""} analyzed</p>
             </div>
 
-            {/* Summary Report */}
-            <ResultsSummaryReport results={results} />
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-8">
-              <span className="flex-1 border-t border-zinc-800" />
-              <span className="text-[9px] text-zinc-700 tracking-widest uppercase">detailed results</span>
-              <span className="flex-1 border-t border-zinc-800" />
-            </div>
-
-            {/* Detailed Results Cards */}
-            <div className="flex flex-col gap-2">
-              {results.pairs.map((pair, i) => (
-                <ResultCard key={`${pair.file1}-${pair.file2}`} pair={pair} index={i} />
+            {/* Folder Result Cards */}
+            <div className="flex flex-col gap-3">
+              {folderResults.map((result, i) => (
+                <FolderResultCard 
+                  key={result.folderName} 
+                  folderName={result.folderName} 
+                  result={result} 
+                  index={i} 
+                />
               ))}
             </div>
 
@@ -653,7 +563,7 @@ export default function App() {
         )}
 
         {/* Waiting state while first folder processes */}
-        {running && !results && (
+        {running && folderResults.length === 0 && (
           <div className="h-full flex items-center justify-center">
             <p className="text-[10px] text-zinc-700 uppercase tracking-[0.3em]">Awaiting first result…</p>
           </div>
