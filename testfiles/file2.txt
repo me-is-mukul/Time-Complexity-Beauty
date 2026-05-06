@@ -1,4 +1,0 @@
-Data structures and algorithms are essential concepts in computer science. 
-They help organize data efficiently and solve complex problems. 
-Understanding algorithms improves coding efficiency and problem solving ability. 
-Common structures include arrays, linked lists, stacks, queues, trees and graphs.
